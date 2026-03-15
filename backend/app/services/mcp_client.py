@@ -360,6 +360,7 @@ def get_mcp_client() -> MCPClient:
     global _mcp_client
     if _mcp_client is None:
         from app.config import get_settings
+
         settings = get_settings()
 
         # Handle case-insensitive attribute access

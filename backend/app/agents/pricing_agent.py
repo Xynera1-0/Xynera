@@ -53,14 +53,10 @@ Provide:
 8. Optimization opportunities
 9. Confidence assessment"""
 
-    async def pricing_agent(
-        query: str,
-        context: Dict[str, Any],
-    ) -> AgentOutput:
-        """Execute the pricing agent"""
-        agent = PricingAgent()
-        return await agent.execute(query, context)
-
-
-# Export the agent function for workflow integration
-pricing_agent = PricingAgent().pricing_agent
+async def pricing_agent(
+    query: str,
+    context: Dict[str, Any],
+) -> AgentOutput:
+    """Execute the pricing agent"""
+    agent = PricingAgent()
+    return await agent.execute(query, context)

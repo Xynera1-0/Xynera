@@ -91,7 +91,7 @@ class BaseAgent(ABC):
         4. Process with LLM
         5. Return structured output
         """
-        from app.config.settings import get_settings
+        from app.config import get_settings
 
         settings = get_settings()
 

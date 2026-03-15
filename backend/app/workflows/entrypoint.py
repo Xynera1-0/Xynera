@@ -10,7 +10,7 @@ Usage:
 """
 
 import logging
-from orchestrator_workflow import execute_workflow, get_workflow
+from app.workflows.orchestrator_workflow import execute_workflow, get_workflow
 from app.models.state import OrchestratorState
 
 logger = logging.getLogger(__name__)

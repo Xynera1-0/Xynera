@@ -52,14 +52,10 @@ Provide:
 8. Messaging recommendations
 9. Confidence assessment"""
 
-    async def messaging_agent(
-        query: str,
-        context: Dict[str, Any],
-    ) -> AgentOutput:
-        """Execute the messaging agent"""
-        agent = MessagingAgent()
-        return await agent.execute(query, context)
-
-
-# Export the agent function for workflow integration
-messaging_agent = MessagingAgent().messaging_agent
+async def messaging_agent(
+    query: str,
+    context: Dict[str, Any],
+) -> AgentOutput:
+    """Execute the messaging agent"""
+    agent = MessagingAgent()
+    return await agent.execute(query, context)

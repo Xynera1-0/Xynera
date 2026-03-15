@@ -50,14 +50,10 @@ Provide:
 7. Actionable insights
 8. Confidence assessment"""
 
-    async def win_loss_agent(
-        query: str,
-        context: Dict[str, Any],
-    ) -> AgentOutput:
-        """Execute the win/loss agent"""
-        agent = WinLossAgent()
-        return await agent.execute(query, context)
-
-
-# Export the agent function for workflow integration
-win_loss_agent = WinLossAgent().win_loss_agent
+async def win_loss_agent(
+    query: str,
+    context: Dict[str, Any],
+) -> AgentOutput:
+    """Execute the win/loss agent"""
+    agent = WinLossAgent()
+    return await agent.execute(query, context)

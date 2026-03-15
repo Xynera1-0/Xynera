@@ -42,14 +42,10 @@ Provide:
 4. Competitive dynamics
 5. Confidence assessment"""
 
-    async def market_trend_agent(
-        query: str,
-        context: Dict[str, Any],
-    ) -> AgentOutput:
-        """Execute the market trend agent"""
-        agent = MarketTrendAgent()
-        return await agent.execute(query, context)
-
-
-# Export the agent function for workflow integration
-market_trend_agent = MarketTrendAgent().market_trend_agent
+async def market_trend_agent(
+    query: str,
+    context: Dict[str, Any],
+) -> AgentOutput:
+    """Execute the market trend agent"""
+    agent = MarketTrendAgent()
+    return await agent.execute(query, context)
