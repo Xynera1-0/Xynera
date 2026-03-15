@@ -4,9 +4,7 @@ import logging
 from typing import Dict, Any, List
 from datetime import datetime
 from langgraph.graph import StateGraph, END
-from langchain_core.language_model import BaseLanguageModel
 from app.models.state import OrchestratorState, Subtask, TaskStatus
-from app.services.llm_client import get_gemini_client
 
 logger = logging.getLogger(__name__)
 
@@ -148,7 +146,7 @@ async def dispatch_to_agents(state: OrchestratorState) -> OrchestratorState:
             # Execute agent with timeout
             result = await asyncio.wait_for(
                 agent_func(subtask.query, subtask.context),
-                timeout=settings.agent_timeout_seconds
+                timeout=settings.AGENT_TIMEOUT_SECONDS
             )
             elapsed_ms = (time.time() - start_time) * 1000
             result.processing_time_ms = elapsed_ms
@@ -201,6 +199,7 @@ async def aggregate_results(state: OrchestratorState) -> OrchestratorState:
         "agent_summaries": {},
         "confidence_by_agent": {},
         "high_confidence_facts": [],
+        "agent_analyses": {},
     }
 
     # Collect facts and sources
@@ -214,14 +213,30 @@ async def aggregate_results(state: OrchestratorState) -> OrchestratorState:
 
         aggregated["all_facts"].extend(output.facts)
 
+        # Store each agent's full analysis text
+        if output.raw_analysis:
+            aggregated["agent_analyses"][agent_type] = output.raw_analysis
+
         # Add high confidence facts
-        if output.confidence_score >= 0.7:
+        if output.confidence_score >= 0.6:
             aggregated["high_confidence_facts"].extend(
-                [f"{fact} (Agent: {agent_type}, Conf: {output.confidence_score:.2f})" for fact in output.facts]
+                [f"{fact} (Agent: {agent_type}, Conf: {output.confidence_score:.0%})" for fact in output.facts]
             )
 
-        # Collect top sources
-        aggregated["top_sources"].extend(output.sources[:5])
+        # Collect top sources (skip empty URLs)
+        for src in output.sources[:5]:
+            if src.get("url"):
+                aggregated["top_sources"].append(src)
+
+    # Deduplicate sources by URL
+    seen_urls = set()
+    unique_sources = []
+    for src in aggregated["top_sources"]:
+        url = src.get("url", "")
+        if url and url not in seen_urls:
+            seen_urls.add(url)
+            unique_sources.append(src)
+    aggregated["top_sources"] = unique_sources[:10]
 
     # Calculate overall confidence
     confidences = [o.confidence_score for o in state.agent_outputs.values() if o.confidence_score > 0]
@@ -241,20 +256,64 @@ async def aggregate_results(state: OrchestratorState) -> OrchestratorState:
 
 async def trigger_synthesis(state: OrchestratorState) -> OrchestratorState:
     """
-    Node 5: Prepare output for synthesis stage
-    - Format results for downstream processing
-    - Add metadata for synthesis
-    - Mark as ready for presentation layer
+    Node 5: Synthesize a narrative summary from all agent findings
+    - Use LLM to create a cohesive analysis
+    - Add metadata for the presentation layer
     """
     if state.status == TaskStatus.FAILED:
         return state
 
-    logger.info(f"[Node 5] Preparing synthesis for request {state.request_id}")
+    logger.info(f"[Node 5] Synthesizing results for request {state.request_id}")
 
     state.completed_at = datetime.utcnow()
 
-    # Prepare synthesis input
     if state.aggregated_insights:
+        # Build context from agent analyses for the synthesis LLM call
+        agent_analyses = state.aggregated_insights.get("agent_analyses", {})
+        all_facts = state.aggregated_insights.get("all_facts", [])
+
+        synthesis_context = ""
+        for agent_type, analysis in agent_analyses.items():
+            synthesis_context += f"\n### {agent_type.replace('_', ' ').title()} Agent:\n{analysis[:800]}\n"
+
+        if not synthesis_context and all_facts:
+            synthesis_context = "\nKey findings:\n" + "\n".join(f"- {f}" for f in all_facts[:20])
+
+        # Generate narrative summary via LLM
+        summary = ""
+        if synthesis_context:
+            try:
+                from app.services.llm_client import query_llm
+
+                summary_prompt = f"""Based on the following competitive intelligence research about "{state.user_query}", write a clear, actionable executive summary.
+
+{synthesis_context}
+
+Write 2-4 paragraphs that:
+1. Highlight the most important findings across all analysis areas
+2. Identify key patterns, opportunities, and risks
+3. Provide actionable recommendations
+
+Be concise and data-driven. Do NOT use markdown headers — just write flowing paragraphs."""
+
+                summary = await query_llm(
+                    summary_prompt,
+                    system_prompt="You are a senior competitive intelligence analyst writing an executive briefing.",
+                    temperature=0.4,
+                )
+                logger.info(f"Generated synthesis summary ({len(summary)} chars)")
+            except Exception as e:
+                logger.error(f"Synthesis LLM call failed: {e}")
+                # Fallback: use top facts as summary
+                if all_facts:
+                    summary = "Key findings from analysis:\n\n" + "\n".join(f"• {f}" for f in all_facts[:10])
+
+        state.aggregated_insights["summary"] = summary
+
+        # Remove raw agent analyses from the final output to reduce payload size
+        state.aggregated_insights.pop("agent_analyses", None)
+
+        # Add metadata
         state.aggregated_insights["request_metadata"] = {
             "request_id": state.request_id,
             "user_id": state.user_id,
@@ -270,7 +329,7 @@ async def trigger_synthesis(state: OrchestratorState) -> OrchestratorState:
             "agents_used": list(state.agent_outputs.keys()),
         }
 
-    logger.info(f"Synthesis preparation complete for request {state.request_id}")
+    logger.info(f"Synthesis complete for request {state.request_id}")
 
     return state
 
@@ -323,9 +382,12 @@ async def execute_workflow(state: OrchestratorState) -> OrchestratorState:
 
     logger.info(f"Executing workflow for request {state.request_id}")
 
-    # Execute workflow
-    result = await workflow.ainvoke({"state": state})
+    # LangGraph 0.2+ expects a dict matching the state schema fields
+    result = await workflow.ainvoke(state.model_dump())
 
     logger.info(f"Workflow execution complete for request {state.request_id}")
 
-    return result.get("state", state)
+    # Result is a dict of state fields — reconstruct the Pydantic model
+    if isinstance(result, dict):
+        return OrchestratorState(**result)
+    return result

@@ -25,9 +25,9 @@ def get_gemini_client() -> ChatGoogleGenerativeAI:
         logger.info("Initializing Gemini LLM client")
 
         _llm_client = ChatGoogleGenerativeAI(
-            model="gemini-pro",
-            google_api_key=settings.google_api_key,
-            temperature=settings.agent_temperature,
+            model="gemini-3-flash-preview",
+            google_api_key=settings.GOOGLE_API_KEY,
+            temperature=settings.AGENT_TEMPERATURE,
         )
 
     return _llm_client
@@ -42,9 +42,6 @@ async def query_llm(
     Query the LLM with a prompt
     Includes error handling and retries
     """
-    from app.config.settings import get_settings
-
-    settings = get_settings()
     llm = get_gemini_client()
 
     # Override temperature if provided

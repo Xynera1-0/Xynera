@@ -43,7 +43,7 @@ export function ArtifactRenderer({ artifact }: Props) {
       break
     case 'text_summary':
     default:
-      body = <TextSummary data={data} />
+      body = <TextSummary data={data} summary={artifact.summary} />
   }
 
   return (

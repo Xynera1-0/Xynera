@@ -30,6 +30,7 @@ class AgentOutput(BaseModel):
     )
     error: Optional[str] = Field(default=None, description="Error message if agent failed")
     processing_time_ms: float = Field(default=0.0, description="Time taken to process in milliseconds")
+    raw_analysis: str = Field(default="", description="Full LLM analysis text")
 
 
 class Subtask(BaseModel):

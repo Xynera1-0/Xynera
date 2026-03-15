@@ -2,18 +2,32 @@ import type { ArtifactData } from '@/types'
 
 interface Props {
   data: ArtifactData
+  summary?: string
 }
 
-export function TextSummary({ data }: Props) {
+export function TextSummary({ data, summary }: Props) {
   const facts = data.high_confidence_facts?.length ? data.high_confidence_facts : data.all_facts
   const sources = data.top_sources ?? []
   const summaries = data.agent_summaries ?? {}
   const meta = data.request_metadata
+  const summaryText = summary || data.summary || ''
 
   return (
     <div className="space-y-4 text-sm">
+      {/* Executive Summary */}
+      {summaryText && (
+        <section>
+          <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
+            Executive Summary
+          </h4>
+          <div className="text-gray-200 leading-relaxed whitespace-pre-line">
+            {summaryText}
+          </div>
+        </section>
+      )}
+
       {/* Key findings */}
-      {facts.length > 0 && (
+      {facts && facts.length > 0 && (
         <section>
           <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
             Key findings
