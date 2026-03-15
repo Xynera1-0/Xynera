@@ -1,0 +1,24 @@
+version: "3.8"
+
+services:
+  growth-intelligence-server:
+    build: .
+    container_name: xynera-growth-server
+    ports:
+      - "8000:8000"
+    environment:
+      - REDDIT_CLIENT_ID=${REDDIT_CLIENT_ID}
+      - REDDIT_CLIENT_SECRET=${REDDIT_CLIENT_SECRET}
+      - REDDIT_USER_AGENT=${REDDIT_USER_AGENT:-VeracityGrowthBot/1.0}
+      - REDDIT_USERNAME=${REDDIT_USERNAME}
+      - REDDIT_PASSWORD=${REDDIT_PASSWORD}
+      - META_ADS_TOKEN=${META_ADS_TOKEN}
+      - LINKEDIN_TOKEN=${LINKEDIN_TOKEN}
+    volumes:
+      - .:/app
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
