@@ -19,7 +19,7 @@ def get_gemini_client() -> ChatGoogleGenerativeAI:
     global _llm_client
 
     if _llm_client is None:
-        from app.config.settings import get_settings
+        from app.config import get_settings
 
         settings = get_settings()
         logger.info("Initializing Gemini LLM client")

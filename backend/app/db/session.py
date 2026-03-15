@@ -3,9 +3,12 @@ from app.config import get_settings
 
 settings = get_settings()
 
-_db_url = settings.DATABASE_URL.replace(
-    "postgresql://", "postgresql+asyncpg://"
-).replace("postgres://", "postgresql+asyncpg://")
+_db_url = (
+    settings.DATABASE_URL
+    .replace("postgresql://", "postgresql+asyncpg://")
+    .replace("postgres://", "postgresql+asyncpg://")
+    .replace("sslmode=require", "ssl=require")
+)
 
 engine = create_async_engine(
     _db_url,

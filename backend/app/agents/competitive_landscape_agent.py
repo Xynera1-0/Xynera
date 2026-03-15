@@ -49,14 +49,10 @@ Provide:
 6. Strategic recommendations
 7. Confidence assessment"""
 
-    async def competitive_landscape_agent(
-        query: str,
-        context: Dict[str, Any],
-    ) -> AgentOutput:
-        """Execute the competitive landscape agent"""
-        agent = CompetitiveLandscapeAgent()
-        return await agent.execute(query, context)
-
-
-# Export the agent function for workflow integration
-competitive_landscape_agent = CompetitiveLandscapeAgent().competitive_landscape_agent
+async def competitive_landscape_agent(
+    query: str,
+    context: Dict[str, Any],
+) -> AgentOutput:
+    """Execute the competitive landscape agent"""
+    agent = CompetitiveLandscapeAgent()
+    return await agent.execute(query, context)

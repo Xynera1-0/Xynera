@@ -135,7 +135,7 @@ async def dispatch_to_agents(state: OrchestratorState) -> OrchestratorState:
 
     async def execute_agent(subtask: Subtask) -> tuple[str, Any]:
         """Execute a single agent with timeout"""
-        from app.config.settings import get_settings
+        from app.config import get_settings
 
         settings = get_settings()
         try:
