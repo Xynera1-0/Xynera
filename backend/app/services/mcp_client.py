@@ -1,8 +1,10 @@
-"""MCP (Model Context Protocol) client for external tools"""
+"""MCP client using FIRECRAWL for scraping + PyTrends for trends"""
 
 import logging
 from typing import List, Dict, Any, Optional
 from abc import ABC, abstractmethod
+import httpx
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -12,223 +14,377 @@ class MCPClient(ABC):
 
     @abstractmethod
     async def search_web(self, query: str, num_results: int = 5) -> List[Dict[str, Any]]:
-        """Search the web for information"""
+        """Search and scrape web for information"""
+        pass
+
+    @abstractmethod
+    async def search_news(self, query: str, num_results: int = 5) -> List[Dict[str, Any]]:
+        """Search for news articles"""
+        pass
+
+    @abstractmethod
+    async def search_trends(self, query: str, num_results: int = 5) -> List[Dict[str, Any]]:
+        """Get Google Trends data"""
         pass
 
     @abstractmethod
     async def extract_page(self, url: str) -> Optional[str]:
-        """Extract content from a web page"""
+        """Extract content from a page"""
         pass
 
     @abstractmethod
     async def reddit_analysis(self, query: str) -> List[Dict[str, Any]]:
-        """Analyze Reddit discussions related to a query"""
+        """Analyze Reddit discussions"""
         pass
 
     @abstractmethod
     async def advertisement_intelligence(self, query: str) -> List[Dict[str, Any]]:
-        """Get advertisement intelligence"""
+        """Get advertising intelligence"""
         pass
 
 
-class RealMCPClient(MCPClient):
-    """Real MCP client that calls the actual MCP server"""
+# ✅ FIRECRAWL-ONLY CLIENT
+class FirecrawlMCPClient(MCPClient):
+    """Real MCP client using Firecrawl for scraping"""
 
-    def __init__(self, mcp_server_url: str):
-        self.mcp_server_url = mcp_server_url
-        self.logger = logging.getLogger("mcp.real")
+    def __init__(self, firecrawl_key: str, tavily_key: str = None):
+        self.firecrawl_key = firecrawl_key
+        self.tavily_key = tavily_key
+        self.logger = logging.getLogger("mcp.firecrawl")
 
     async def search_web(self, query: str, num_results: int = 5) -> List[Dict[str, Any]]:
-        """Search the web via MCP server"""
+        """Search web and scrape results using Firecrawl"""
         try:
-            import httpx
+            from firecrawl import FirecrawlApp
 
-            async with httpx.AsyncClient() as client:
-                response = await client.get(
-                    f"{self.mcp_server_url}/search",
-                    params={"q": query, "n": num_results},
-                    timeout=10.0,
+            app = FirecrawlApp(api_key=self.firecrawl_key)
+
+            # Scrape Google search results
+            search_url = f"https://www.google.com/search?q={query.replace(' ', '+')}"
+
+            try:
+                result = app.scrape_url(
+                    url=search_url,
+                    params={"formats": ["markdown", "links"]}
                 )
-                response.raise_for_status()
-                return response.json().get("results", [])
+
+                links = result.get("links", [])
+                results = []
+
+                # Scrape top results
+                for url in links[:num_results]:
+                    try:
+                        if url.startswith("http"):
+                            scraped = app.scrape_url(
+                                url=url,
+                                params={"formats": ["markdown"]}
+                            )
+
+                            content = scraped.get("markdown", "")
+
+                            results.append({
+                                "title": url.split("/")[-1][:60],
+                                "url": url,
+                                "snippet": content[:200] if content else "",
+                                "content": content,
+                                "source": "firecrawl"
+                            })
+                    except Exception as e:
+                        self.logger.warning(f"Failed to scrape {url}: {str(e)}")
+                        continue
+
+                self.logger.info(f"Firecrawl web search: scraped {len(results)} pages")
+                return results
+
+            except Exception as e:
+                self.logger.error(f"Search scraping failed: {str(e)}")
+                return []
+
         except Exception as e:
             self.logger.error(f"Web search failed: {str(e)}")
             return []
 
-    async def extract_page(self, url: str) -> Optional[str]:
-        """Extract content from a page via MCP server"""
+    async def search_news(self, query: str, num_results: int = 5) -> List[Dict[str, Any]]:
+        """Search for news and scrape with Firecrawl"""
         try:
-            import httpx
+            from firecrawl import FirecrawlApp
 
-            async with httpx.AsyncClient() as client:
-                response = await client.get(
-                    f"{self.mcp_server_url}/extract",
-                    params={"url": url},
-                    timeout=10.0,
+            app = FirecrawlApp(api_key=self.firecrawl_key)
+
+            # Search for news articles
+            news_url = f"https://news.google.com/search?q={query.replace(' ', '+')}"
+
+            try:
+                result = app.scrape_url(
+                    url=news_url,
+                    params={"formats": ["markdown"]}
                 )
-                response.raise_for_status()
-                return response.json().get("content", None)
+
+                content = result.get("markdown", "")
+
+                if content:
+                    results = [{
+                        "title": f"News: {query}",
+                        "url": news_url,
+                        "snippet": content[:200],
+                        "content": content,
+                        "source": "news_scrape",
+                        "date": "2024-03-15"
+                    }]
+                else:
+                    results = []
+
+                self.logger.info(f"News search: scraped {len(results)} news pages")
+                return results
+
+            except Exception as e:
+                self.logger.error(f"News scraping failed: {str(e)}")
+                return []
+
+        except Exception as e:
+            self.logger.error(f"News search failed: {str(e)}")
+            return []
+
+    async def search_trends(self, query: str, num_results: int = 5) -> List[Dict[str, Any]]:
+        """Get Google Trends data using PyTrends"""
+        try:
+            from pytrends.request import TrendReq
+
+            pytrends = TrendReq(hl='en-US', tz=360)
+            pytrends.build_payload([query], cat=0, timeframe='today 5-y')
+
+            interest_df = pytrends.interest_over_time()
+            related_queries = pytrends.related_queries()
+
+            trends = []
+
+            if not interest_df.empty:
+                latest_value = interest_df[query].iloc[-1]
+                trends.append({
+                    "metric": "current_interest",
+                    "value": int(latest_value),
+                    "source": "google_trends",
+                    "snippet": f"Current interest in '{query}': {latest_value}",
+                })
+
+            if related_queries.get('queries'):
+                for rel_query in related_queries['queries'][:num_results]:
+                    trends.append({
+                        "metric": "related_query",
+                        "value": rel_query['value'],
+                        "query": rel_query['query'],
+                        "source": "google_trends",
+                        "snippet": f"Related search: {rel_query['query']}",
+                    })
+
+            self.logger.info(f"Google Trends: {len(trends)} data points")
+            return trends if trends else []
+
+        except Exception as e:
+            self.logger.error(f"Trends search failed: {str(e)}")
+            return []
+
+    async def extract_page(self, url: str) -> Optional[str]:
+        """Extract content from a page using Firecrawl"""
+        try:
+            from firecrawl import FirecrawlApp
+
+            app = FirecrawlApp(api_key=self.firecrawl_key)
+            result = app.scrape_url(
+                url=url,
+                params={"formats": ["markdown"]}
+            )
+
+            content = result.get("markdown", result.get("content", ""))
+            self.logger.info(f"Extracted {len(content)} chars from {url}")
+            return content
+
         except Exception as e:
             self.logger.error(f"Page extraction failed: {str(e)}")
             return None
 
     async def reddit_analysis(self, query: str) -> List[Dict[str, Any]]:
-        """Analyze Reddit discussions via MCP server"""
+        """Analyze Reddit discussions by scraping Reddit"""
         try:
-            import httpx
+            from firecrawl import FirecrawlApp
 
-            async with httpx.AsyncClient() as client:
-                response = await client.get(
-                    f"{self.mcp_server_url}/reddit",
-                    params={"q": query},
-                    timeout=10.0,
-                )
-                response.raise_for_status()
-                return response.json().get("discussions", [])
+            app = FirecrawlApp(api_key=self.firecrawl_key)
+
+            # Scrape Reddit search results
+            reddit_url = f"https://www.reddit.com/search/?q={query.replace(' ', '+')}"
+
+            result = app.scrape_url(
+                url=reddit_url,
+                params={"formats": ["markdown"]}
+            )
+
+            content = result.get("markdown", "")
+
+            discussions = []
+            if content:
+                discussions.append({
+                    "subreddit": "r/search_results",
+                    "title": f"Reddit discussions about {query}",
+                    "url": reddit_url,
+                    "snippet": content[:200],
+                    "source": "reddit_scrape"
+                })
+
+            self.logger.info(f"Reddit analysis: found {len(discussions)} discussions")
+            return discussions
+
         except Exception as e:
             self.logger.error(f"Reddit analysis failed: {str(e)}")
             return []
 
     async def advertisement_intelligence(self, query: str) -> List[Dict[str, Any]]:
-        """Get advertisement intelligence via MCP server"""
+        """Get advertising intelligence by scraping relevant sites"""
         try:
-            import httpx
+            from firecrawl import FirecrawlApp
 
-            async with httpx.AsyncClient() as client:
-                response = await client.get(
-                    f"{self.mcp_server_url}/ads",
-                    params={"q": query},
-                    timeout=10.0,
-                )
-                response.raise_for_status()
-                return response.json().get("ads", [])
+            app = FirecrawlApp(api_key=self.firecrawl_key)
+
+            # Search for ads-related content via Google
+            ad_search_url = f"https://www.google.com/search?q={query.replace(' ', '+')}+advertising"
+
+            result = app.scrape_url(
+                url=ad_search_url,
+                params={"formats": ["markdown"]}
+            )
+
+            content = result.get("markdown", "")
+
+            results = []
+            if content:
+                results.append({
+                    "title": f"Ad Intelligence: {query}",
+                    "url": ad_search_url,
+                    "snippet": content[:200],
+                    "source": "ads_scrape"
+                })
+
+            self.logger.info(f"Ad intelligence: {len(results)} results")
+            return results
+
         except Exception as e:
             self.logger.error(f"Ad intelligence failed: {str(e)}")
             return []
 
 
+class ServerMCPClient(MCPClient):
+    """MCP client that connects to actual MCP server"""
+
+    def __init__(self, mcp_server_url: str = "http://localhost:8000/mcp"):
+        self.mcp_server_url = mcp_server_url.rstrip('/')
+        self.logger = logging.getLogger("mcp.server")
+        self.client = httpx.AsyncClient(base_url=self.mcp_server_url, timeout=30.0)
+
+    async def _call_mcp_tool(self, tool_name: str, **params) -> Dict[str, Any]:
+        """Generic method to call MCP tools"""
+        try:
+            response = await self.client.post(
+                "/call",
+                json={"tool": tool_name, "params": params}
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            self.logger.error(f"MCP tool call failed ({tool_name}): {str(e)}")
+            return {"error": str(e), "results": []}
+
+    async def search_web(self, query: str, num_results: int = 5) -> List[Dict[str, Any]]:
+        """Search web via MCP server"""
+        result = await self._call_mcp_tool("search_web", query=query, num_results=num_results)
+        return result.get("results", [])
+
+    async def search_news(self, query: str, num_results: int = 5) -> List[Dict[str, Any]]:
+        """Search news via MCP server"""
+        result = await self._call_mcp_tool("search_news", query=query, num_results=num_results)
+        return result.get("results", [])
+
+    async def search_trends(self, query: str, num_results: int = 5) -> List[Dict[str, Any]]:
+        """Get trends via MCP server"""
+        result = await self._call_mcp_tool("search_trends", query=query, num_results=num_results)
+        return result.get("results", [])
+
+    async def extract_page(self, url: str) -> Optional[str]:
+        """Extract page via MCP server"""
+        result = await self._call_mcp_tool("extract_page", url=url)
+        return result.get("content")
+
+    async def reddit_analysis(self, query: str) -> List[Dict[str, Any]]:
+        """Analyze Reddit via MCP server"""
+        result = await self._call_mcp_tool("reddit_analysis", query=query)
+        return result.get("results", [])
+
+    async def advertisement_intelligence(self, query: str) -> List[Dict[str, Any]]:
+        """Get ad intelligence via MCP server"""
+        result = await self._call_mcp_tool("advertisement_intelligence", query=query)
+        return result.get("results", [])
+
+    async def close(self):
+        """Close HTTP client"""
+        await self.client.aclose()
+
+
 class MockMCPClient(MCPClient):
-    """Mock MCP client for testing without real MCP server"""
+    """Mock MCP client for testing"""
 
     def __init__(self):
         self.logger = logging.getLogger("mcp.mock")
 
     async def search_web(self, query: str, num_results: int = 5) -> List[Dict[str, Any]]:
-        """Mock web search results"""
-        self.logger.debug(f"Mock search for: {query}")
+        return [{"title": f"Mock: {query}", "url": "https://example.com", "snippet": "Mock result", "source": "mock"}]
 
-        # Mock results based on query keywords
-        mock_results = [
-            {
-                "title": f"Result 1: {query} Overview",
-                "url": f"https://example.com/1",
-                "snippet": f"This article discusses key aspects of {query}. It covers market trends, competitive landscape, and strategic opportunities.",
-            },
-            {
-                "title": f"Result 2: {query} Analysis",
-                "url": f"https://example.com/2",
-                "snippet": f"Detailed analysis of {query} including market size, growth rate, and key players.",
-            },
-            {
-                "title": f"Result 3: {query} Trends",
-                "url": f"https://example.com/3",
-                "snippet": f"Latest trends in {query} including emerging technologies and consumer preferences.",
-            },
-            {
-                "title": f"Result 4: {query} Competitors",
-                "url": f"https://example.com/4",
-                "snippet": f"Competitive landscape analysis of {query} market with major players and their strategies.",
-            },
-            {
-                "title": f"Result 5: {query} Future",
-                "url": f"https://example.com/5",
-                "snippet": f"Future outlook for {query} industry with predictions for next 5 years.",
-            },
-        ]
+    async def search_news(self, query: str, num_results: int = 5) -> List[Dict[str, Any]]:
+        return [{"title": f"News: {query}", "url": "https://example.com", "snippet": "Mock news", "source": "mock_news", "date": "2024-03-15"}]
 
-        return mock_results[:num_results]
+    async def search_trends(self, query: str, num_results: int = 5) -> List[Dict[str, Any]]:
+        return [{"metric": "interest", "value": 75, "query": query, "source": "mock_trends"}]
 
     async def extract_page(self, url: str) -> Optional[str]:
-        """Mock page extraction"""
-        self.logger.debug(f"Mock extract from: {url}")
-        return f"Extracted content from {url}. Full article content including detailed analysis, statistics, and insights."
+        return f"Mock content from {url}"
 
     async def reddit_analysis(self, query: str) -> List[Dict[str, Any]]:
-        """Mock Reddit analysis"""
-        self.logger.debug(f"Mock Reddit analysis for: {query}")
-
-        return [
-            {
-                "subreddit": "r/business",
-                "discussion_count": 156,
-                "sentiment": "mixed",
-                "key_points": [
-                    f"Users discussing {query} and its market impact",
-                    "Questions about pricing and value proposition",
-                    "Competitive comparisons",
-                ],
-            },
-            {
-                "subreddit": "r/technology",
-                "discussion_count": 89,
-                "sentiment": "positive",
-                "key_points": [
-                    f"Technical aspects of {query}",
-                    "Innovation opportunities",
-                    "Integration with other tools",
-                ],
-            },
-        ]
+        return [{"subreddit": "r/test", "title": "Mock discussion", "snippet": "Mock"}]
 
     async def advertisement_intelligence(self, query: str) -> List[Dict[str, Any]]:
-        """Mock advertisement intelligence"""
-        self.logger.debug(f"Mock ad intelligence for: {query}")
-
-        return [
-            {
-                "brand": "CompetitorA",
-                "ad_count": 245,
-                "spend_estimate": "$50K-$100K/month",
-                "messaging": f"Key benefits of {query}",
-                "target_audience": "Business professionals aged 25-45",
-            },
-            {
-                "brand": "CompetitorB",
-                "ad_count": 182,
-                "spend_estimate": "$30K-$70K/month",
-                "messaging": f"{query} for enterprise",
-                "target_audience": "C-level executives",
-            },
-        ]
+        return [{"title": "Mock ad", "source": "mock_ads"}]
 
 
-# Global MCP client instance
+# Global instance
 _mcp_client: Optional[MCPClient] = None
 
 
 def get_mcp_client() -> MCPClient:
-    """
-    Get or create the MCP client
-    Switches between real and mock based on configuration
-    """
     global _mcp_client
-
     if _mcp_client is None:
-        from app.config.settings import get_settings
+        from app.config import get_settings
 
         settings = get_settings()
 
-        if settings.mcp_mode == "real":
-            logger.info(f"Initializing real MCP client for {settings.mcp_server_url}")
-            _mcp_client = RealMCPClient(settings.mcp_server_url)
+        # Handle case-insensitive attribute access
+        mcp_mode = getattr(settings, 'MCP_MODE', 'mock') or getattr(settings, 'mcp_mode', 'mock')
+        mcp_server_url = getattr(settings, 'MCP_SERVER_URL', 'http://localhost:8000/mcp') or getattr(settings, 'mcp_server_url', 'http://localhost:8000/mcp')
+        firecrawl_key = getattr(settings, 'FIRECRAWL_API_KEY', '') or getattr(settings, 'firecrawl_api_key', '')
+        tavily_key = getattr(settings, 'TAVILY_API_KEY', '') or getattr(settings, 'tavily_api_key', '')
+
+        if mcp_mode.lower() == "server":
+            logger.info(f"Initializing SERVER MCP client (connecting to {mcp_server_url})")
+            _mcp_client = ServerMCPClient(mcp_server_url=mcp_server_url)
+        elif mcp_mode.lower() == "real":
+            logger.info("Initializing REAL MCP client (Firecrawl + PyTrends)")
+            _mcp_client = FirecrawlMCPClient(
+                firecrawl_key=firecrawl_key,
+                tavily_key=tavily_key,
+            )
         else:
-            logger.info("Initializing mock MCP client")
+            logger.info("Initializing MOCK MCP client")
             _mcp_client = MockMCPClient()
 
     return _mcp_client
 
 
 def reset_mcp_client():
-    """Reset the global MCP client (for testing)"""
     global _mcp_client
     _mcp_client = None
