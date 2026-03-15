@@ -23,9 +23,12 @@ if config.config_file_name is not None:
 target_metadata = Base.metadata
 
 # Convert to asyncpg URL -------------------------------------------------------
-_db_url = settings.DATABASE_URL.replace(
-    "postgresql://", "postgresql+asyncpg://"
-).replace("postgres://", "postgresql+asyncpg://")
+_db_url = (
+    settings.DATABASE_URL
+    .replace("postgresql://", "postgresql+asyncpg://")
+    .replace("postgres://", "postgresql+asyncpg://")
+    .replace("sslmode=require", "ssl=require")
+)
 # ------------------------------------------------------------------------------
 
 
