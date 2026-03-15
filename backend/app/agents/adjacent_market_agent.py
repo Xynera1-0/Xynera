@@ -53,14 +53,10 @@ Provide:
 8. Strategic recommendations
 9. Confidence assessment"""
 
-    async def adjacent_market_agent(
-        query: str,
-        context: Dict[str, Any],
-    ) -> AgentOutput:
-        """Execute the adjacent market agent"""
-        agent = AdjacentMarketAgent()
-        return await agent.execute(query, context)
-
-
-# Export the agent function for workflow integration
-adjacent_market_agent = AdjacentMarketAgent().adjacent_market_agent
+async def adjacent_market_agent(
+    query: str,
+    context: Dict[str, Any],
+) -> AgentOutput:
+    """Execute the adjacent market agent"""
+    agent = AdjacentMarketAgent()
+    return await agent.execute(query, context)

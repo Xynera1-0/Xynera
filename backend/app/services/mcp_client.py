@@ -214,7 +214,7 @@ def get_mcp_client() -> MCPClient:
     global _mcp_client
 
     if _mcp_client is None:
-        from app.config.settings import get_settings
+        from app.config import get_settings
 
         settings = get_settings()
 
