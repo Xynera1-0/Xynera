@@ -29,7 +29,8 @@ class Settings(BaseSettings):
     GOOGLE_API_KEY: str = ""
 
     # External Tools
-    TAVILY_API_KEY: str = ""
+    FIRECRAWL_API_KEY: str = ""  # Primary web scraper
+    TAVILY_API_KEY: str = ""     # Backup (optional)
     REDDIT_CLIENT_ID: str = ""
     REDDIT_CLIENT_SECRET: str = ""
     REDDIT_USER_AGENT: str = "Xynera/1.0"
