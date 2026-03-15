@@ -1,0 +1,81 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "xynera"
+version = "0.1.0"
+description = "A distributed multi-agent competitive intelligence platform using LangGraph and Gemini"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+    {name = "Xynera Team"}
+]
+keywords = ["competitive-intelligence", "langgraph", "multi-agent", "gemini"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+dependencies = [
+    "langgraph>=0.1.0",
+    "langchain>=0.1.0",
+    "langchain-google-genai>=0.0.11",
+    "pydantic>=2.0",
+    "pydantic-settings>=2.0",
+    "redis>=5.0",
+    "rq>=1.13.0",
+    "httpx>=0.24.0",
+    "python-dotenv>=1.0.0",
+    "typer>=0.9.0",
+    "rich>=13.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.1.0",
+    "black>=23.0.0",
+    "ruff>=0.0.280",
+    "mypy>=1.4.0",
+]
+
+test = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.1.0",
+]
+
+[project.scripts]
+xynera-cli = "src.cli:app"
+xynera-orchestrator = "src.orchestrator_main:main"
+
+[tool.setuptools]
+packages = ["src"]
+
+[tool.black]
+line-length = 100
+target-version = ["py310", "py311", "py312"]
+
+[tool.ruff]
+select = ["E", "F", "W"]
+line-length = 100
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests",
+]
