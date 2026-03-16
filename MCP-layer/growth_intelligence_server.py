@@ -19,7 +19,10 @@ Data sources:
 """
 
 import asyncio
+import os
 from typing import List, Dict, Any, Optional
+from urllib.parse import urlparse
+
 from fastmcp import FastMCP
 from dotenv import load_dotenv
 
@@ -33,6 +36,18 @@ load_dotenv()
 
 # Initialize FastMCP server with HTTP transport (not stdio)
 mcp = FastMCP("Xynera Growth Intelligence Server")
+
+
+def get_server_binding() -> tuple[str, int, str]:
+    """Resolve MCP server host/port from environment with a non-conflicting default."""
+    configured_url = os.getenv("MCP_SERVER_URL", "http://localhost:8080/mcp")
+    parsed_url = urlparse(configured_url)
+
+    host = parsed_url.hostname or "127.0.0.1"
+    port = parsed_url.port or 8080
+    base_url = f"http://{host}:{port}"
+
+    return host, port, base_url
 
 
 @mcp.tool()
@@ -235,15 +250,18 @@ async def force_crawl(
 
 
 if __name__ == "__main__":
+    server_host, server_port, base_url = get_server_binding()
+
     print("=" * 80)
     print("🚀 Xynera Growth Intelligence Server")
     print("=" * 80)
     print("\nStarting HTTP MCP server...")
     print("Core intelligence domains: 6")
     print("Data sources: Reddit, HN, Patents, Meta Ads, LinkedIn, Playwright")
-    print("\nServer will be available at: http://localhost:8000")
-    print("API documentation: http://localhost:8000/docs")
+    print(f"\nServer will be available at: {base_url}")
+    print(f"MCP endpoint: {base_url}/mcp")
+    print(f"API documentation: {base_url}/docs")
     print("=" * 80 + "\n")
-    
+
     # Run FastMCP with HTTP transport (not stdio)
-    mcp.run(transport="http", host="127.0.0.1", port=8000)
+    mcp.run(transport="http", host=server_host, port=server_port)

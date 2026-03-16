@@ -52,16 +52,29 @@ class BaseAgent(ABC):
         query: str,
         system_prompt: str,
         external_data: List[Dict[str, Any]],
-    ) -> tuple[List[str], List[Dict[str, str]], float]:
+    ) -> tuple[List[str], List[Dict[str, str]], float, str]:
         """
         Process the query with external data using LLM
-        Returns: (facts, sources, confidence_score)
+        Returns: (facts, sources, confidence_score, raw_analysis)
         """
         # Format external data for the LLM
         formatted_context = self._format_external_data(external_data)
 
         # Build the complete query with context
-        complete_query = f"{query}\n\nContext from research:\n{formatted_context}"
+        complete_query = f"""{query}
+
+Context from research:
+{formatted_context}
+
+IMPORTANT: Structure your response as follows:
+## Key Findings
+- List each key finding as a bullet point
+
+## Analysis
+Provide a detailed narrative analysis paragraph.
+
+## Confidence
+State your confidence level (high/medium/low) and why."""
 
         # Query the LLM
         try:
@@ -72,11 +85,11 @@ class BaseAgent(ABC):
                 response, external_data
             )
 
-            return facts, sources, confidence
+            return facts, sources, confidence, response
 
         except Exception as e:
             self.logger.error(f"LLM processing failed: {str(e)}")
-            return [], [], 0.0
+            return [], [], 0.0, ""
 
     async def execute(
         self,
@@ -109,7 +122,7 @@ class BaseAgent(ABC):
             self.logger.debug(f"Retrieved {len(external_data)} external sources")
 
             # Step 4: Process with LLM
-            facts, sources, confidence = await self.process_with_llm(
+            facts, sources, confidence, raw_analysis = await self.process_with_llm(
                 agent_query,
                 system_prompt,
                 external_data,
@@ -121,6 +134,7 @@ class BaseAgent(ABC):
                 facts=facts,
                 sources=sources,
                 confidence_score=max(0, min(1, confidence)),  # Clamp between 0 and 1
+                raw_analysis=raw_analysis,
             )
 
             self.logger.info(
@@ -144,11 +158,14 @@ class BaseAgent(ABC):
             return "No external data sources found."
 
         formatted = "Sources:\n"
-        for i, item in enumerate(external_data[:5]):  # Limit to top 5
+        for i, item in enumerate(external_data[:8]):
             title = item.get("title", "Unknown")
-            snippet = item.get("snippet", item.get("content", ""))[:200]
+            # Use full content when available, fall back to snippet
+            content = item.get("content", "") or item.get("snippet", "")
+            content = content[:800]  # Allow up to 800 chars per source
             url = item.get("url", "")
-            formatted += f"\n{i+1}. {title}\n   URL: {url}\n   Content: {snippet}...\n"
+            source_type = item.get("source", "web")
+            formatted += f"\n{i+1}. [{source_type}] {title}\n   URL: {url}\n   Content: {content}\n"
 
         return formatted
 
@@ -158,28 +175,60 @@ class BaseAgent(ABC):
         external_data: List[Dict[str, Any]],
     ) -> tuple[List[str], List[Dict[str, str]], float]:
         """
-        Parse LLM response to extract facts, sources, and confidence
-        This is a basic implementation - can be overridden for more complex parsing
+        Parse LLM response to extract facts, sources, and confidence.
+        Handles markdown formatting with headers, bullets, numbered lists.
         """
-        # Split response into lines
+        import re
+
         lines = response.strip().split("\n")
 
         facts = []
+        in_confidence_section = False
         for line in lines:
-            if line.strip() and not line.startswith("#"):
-                facts.append(line.strip())
+            cleaned = line.strip()
+            if not cleaned:
+                in_confidence_section = False
+                continue
+            # Skip markdown headers but track confidence section
+            if cleaned.startswith("#"):
+                in_confidence_section = "confidence" in cleaned.lower()
+                continue
+            # Skip lines in confidence section
+            if in_confidence_section:
+                continue
+            # Clean bullet points and numbered lists
+            cleaned = re.sub(r'^[-*•]\s+', '', cleaned)
+            cleaned = re.sub(r'^\d+[\.\)]\s+', '', cleaned)
+            # Remove bold markers
+            cleaned = cleaned.replace("**", "")
+            if len(cleaned) > 15:  # Only keep substantive lines
+                facts.append(cleaned)
 
         # Extract sources from external data
         sources = [
             {
                 "title": item.get("title", "Unknown"),
                 "url": item.get("url", ""),
-                "snippet": item.get("snippet", item.get("content", ""))[:100],
+                "snippet": item.get("snippet", item.get("content", ""))[:150],
             }
-            for item in external_data[:3]  # Top 3 sources
+            for item in external_data[:8]
+            if item.get("url")
         ]
 
-        # Calculate confidence (basic heuristic)
-        confidence = 0.7 if len(facts) >= 3 else 0.5 if len(facts) > 0 else 0.0
+        # Parse confidence from response text
+        confidence = 0.5
+        lower_resp = response.lower()
+        if "high confidence" in lower_resp or "confidence: high" in lower_resp:
+            confidence = 0.85
+        elif "medium confidence" in lower_resp or "confidence: medium" in lower_resp or "moderate confidence" in lower_resp:
+            confidence = 0.65
+        elif "low confidence" in lower_resp or "confidence: low" in lower_resp:
+            confidence = 0.35
+        elif len(facts) >= 8:
+            confidence = 0.8
+        elif len(facts) >= 5:
+            confidence = 0.75
+        elif len(facts) >= 2:
+            confidence = 0.6
 
         return facts, sources, confidence

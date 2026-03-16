@@ -327,6 +327,155 @@ class ServerMCPClient(MCPClient):
         await self.client.aclose()
 
 
+class TavilyMCPClient(MCPClient):
+    """MCP client using Tavily API for web search"""
+
+    def __init__(self, tavily_key: str):
+        self.tavily_key = tavily_key
+        self.logger = logging.getLogger("mcp.tavily")
+
+    async def _tavily_search(
+        self, query: str, num_results: int = 5, search_depth: str = "basic", topic: str = "general"
+    ) -> Dict[str, Any]:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(
+                "https://api.tavily.com/search",
+                json={
+                    "api_key": self.tavily_key,
+                    "query": query,
+                    "search_depth": search_depth,
+                    "max_results": num_results,
+                    "include_answer": True,
+                    "include_raw_content": False,
+                    "topic": topic,
+                },
+            )
+            resp.raise_for_status()
+            return resp.json()
+
+    async def search_web(self, query: str, num_results: int = 5) -> List[Dict[str, Any]]:
+        try:
+            data = await self._tavily_search(query, num_results, search_depth="advanced")
+            results = []
+            if data.get("answer"):
+                results.append({
+                    "title": "AI Summary",
+                    "url": "",
+                    "snippet": data["answer"],
+                    "content": data["answer"],
+                    "source": "tavily_answer",
+                })
+            for item in data.get("results", []):
+                results.append({
+                    "title": item.get("title", ""),
+                    "url": item.get("url", ""),
+                    "snippet": item.get("content", "")[:300],
+                    "content": item.get("content", ""),
+                    "source": "tavily",
+                })
+            self.logger.info(f"Tavily web search: {len(results)} results for '{query[:50]}'")
+            return results
+        except Exception as e:
+            self.logger.error(f"Tavily web search failed: {e}")
+            return []
+
+    async def search_news(self, query: str, num_results: int = 5) -> List[Dict[str, Any]]:
+        try:
+            data = await self._tavily_search(query, num_results, topic="news")
+            results = []
+            for item in data.get("results", []):
+                results.append({
+                    "title": item.get("title", ""),
+                    "url": item.get("url", ""),
+                    "snippet": item.get("content", "")[:300],
+                    "content": item.get("content", ""),
+                    "source": "tavily_news",
+                    "date": item.get("published_date", ""),
+                })
+            self.logger.info(f"Tavily news search: {len(results)} results")
+            return results
+        except Exception as e:
+            self.logger.error(f"Tavily news search failed: {e}")
+            return []
+
+    async def search_trends(self, query: str, num_results: int = 5) -> List[Dict[str, Any]]:
+        try:
+            data = await self._tavily_search(f"{query} market trends 2024 2025", num_results)
+            results = []
+            if data.get("answer"):
+                results.append({
+                    "metric": "trend_summary",
+                    "value": data["answer"],
+                    "source": "tavily_trends",
+                    "snippet": data["answer"][:200],
+                })
+            for item in data.get("results", []):
+                results.append({
+                    "metric": "trend_data",
+                    "value": item.get("content", "")[:200],
+                    "source": "tavily_trends",
+                    "snippet": item.get("content", "")[:200],
+                    "url": item.get("url", ""),
+                    "title": item.get("title", ""),
+                })
+            return results
+        except Exception as e:
+            self.logger.error(f"Tavily trends search failed: {e}")
+            return []
+
+    async def extract_page(self, url: str) -> Optional[str]:
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                resp = await client.post(
+                    "https://api.tavily.com/extract",
+                    json={"api_key": self.tavily_key, "urls": [url]},
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                results = data.get("results", [])
+                if results:
+                    return results[0].get("raw_content", "")
+            return None
+        except Exception as e:
+            self.logger.error(f"Tavily extract failed: {e}")
+            return None
+
+    async def reddit_analysis(self, query: str) -> List[Dict[str, Any]]:
+        try:
+            data = await self._tavily_search(
+                f"site:reddit.com {query}", num_results=5, search_depth="advanced"
+            )
+            results = []
+            for item in data.get("results", []):
+                results.append({
+                    "subreddit": "reddit",
+                    "title": item.get("title", ""),
+                    "url": item.get("url", ""),
+                    "snippet": item.get("content", "")[:300],
+                    "source": "tavily_reddit",
+                })
+            return results
+        except Exception as e:
+            self.logger.error(f"Tavily reddit search failed: {e}")
+            return []
+
+    async def advertisement_intelligence(self, query: str) -> List[Dict[str, Any]]:
+        try:
+            data = await self._tavily_search(f"{query} advertising strategy", num_results=5)
+            results = []
+            for item in data.get("results", []):
+                results.append({
+                    "title": item.get("title", ""),
+                    "url": item.get("url", ""),
+                    "snippet": item.get("content", "")[:300],
+                    "source": "tavily_ads",
+                })
+            return results
+        except Exception as e:
+            self.logger.error(f"Tavily ad intelligence failed: {e}")
+            return []
+
+
 class MockMCPClient(MCPClient):
     """Mock MCP client for testing"""
 
@@ -372,6 +521,10 @@ def get_mcp_client() -> MCPClient:
         if mcp_mode.lower() == "server":
             logger.info(f"Initializing SERVER MCP client (connecting to {mcp_server_url})")
             _mcp_client = ServerMCPClient(mcp_server_url=mcp_server_url)
+        elif mcp_mode.lower() == "tavily" or (mcp_mode.lower() == "mock" and tavily_key):
+            # Auto-upgrade from mock to tavily when a key is available
+            logger.info("Initializing TAVILY MCP client")
+            _mcp_client = TavilyMCPClient(tavily_key=tavily_key)
         elif mcp_mode.lower() == "real":
             logger.info("Initializing REAL MCP client (Firecrawl + PyTrends)")
             _mcp_client = FirecrawlMCPClient(

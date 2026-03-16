@@ -46,6 +46,7 @@ export interface Artifact {
   confidence: number
   agents_completed: string[]
   error: string | null
+  summary?: string
 }
 
 export interface ArtifactData {
@@ -54,6 +55,7 @@ export interface ArtifactData {
   agent_summaries: Record<string, AgentSummary>
   confidence_by_agent: Record<string, number>
   high_confidence_facts: string[]
+  summary?: string
   request_metadata?: RequestMetadata
   trends?: TrendPoint[]
   competitors?: CompetitorEntry[]

@@ -73,14 +73,19 @@ async def _run_workflow(job: dict) -> dict:
 
     result_state = await execute_workflow(state)
 
+    # Extract the summary text for the message content
+    insights = result_state.aggregated_insights or {}
+    summary_text = insights.get("summary", "")
+
     artifact = {
         "type": "text_summary",
         "title": f"Analysis: {job['query'][:100]}",
-        "data": result_state.aggregated_insights or {},
+        "data": insights,
         "status": result_state.status.value,
         "confidence": result_state.final_confidence,
         "agents_completed": list(result_state.agent_outputs.keys()),
         "error": result_state.error_message,
+        "summary": summary_text,
     }
     return artifact
 
@@ -98,7 +103,7 @@ async def _persist_response(
             session_id=uuid.UUID(session_id),
             user_id=uuid.UUID(user_id),
             role="assistant",
-            content=artifact.get("data", {}).get("summary", ""),
+            content=artifact.get("summary", "") or artifact.get("data", {}).get("summary", ""),
             artifact=artifact,
             job_id=job_id,
         )
